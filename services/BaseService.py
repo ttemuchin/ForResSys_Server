@@ -14,11 +14,11 @@ class BaseService:
             name=base_data.name,
             N=base_data.N,
             nY=base_data.nY,
-            accuracy=base_data.accuracy,
+            error=base_data.error,
             nX=base_data.nX,
             dimension=base_data.dimension,
-            base_path=base_data.base_path,
-            content_path=base_data.content_path
+            user_path=base_data.user_path,
+            static_path=base_data.static_path
         )
         return BaseResponse.model_validate(base)
     

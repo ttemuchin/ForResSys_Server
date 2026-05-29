@@ -1,8 +1,9 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from api.v1.routes import router as api_router
-from database.session import engine
+from db.session import engine
 from config import config
 import os
 
@@ -22,14 +23,14 @@ app.mount("/static", StaticFiles(directory=config.STATIC_DIR), name="static")
 
 app.include_router(api_router)
 
-@app.on_event("startup")
-async def startup():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     async with engine.connect() as conn:
         print("Database connected")
-
-@app.on_event("shutdown")
-async def shutdown():
+    print("Application STARTUP complete")
+    yield
     await engine.dispose()
+    print("Application SHUTDOWN")
 
 @app.get("/api/health")
 async def health():
