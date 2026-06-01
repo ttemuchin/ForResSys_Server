@@ -17,6 +17,8 @@ class BaseService:
             error=base_data.error,
             nX=base_data.nX,
             dimension=base_data.dimension,
+            labelsX=base_data.labelsX,
+            labelsY=base_data.labelsY,
             user_path=base_data.user_path,
             static_path=base_data.static_path
         )

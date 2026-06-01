@@ -12,6 +12,9 @@ class BaseEntity(Base, TimestampMixin):
     error = Column(JSON, nullable=False)  # [0.001, 0.005]
     nX = Column(Integer, nullable=False)
     dimension = Column(JSON, nullable=False)  # [400, 60]
+    # !!! now we have names for x,y 
+    labelsX = Column(JSON, nullable=False, default=[])  # ["labelX1", "labelX2"]
+    labelsY = Column(JSON, nullable=False, default=[])  # ["labelY1", "labelY2"]
     trainedModels = Column(JSON, default=[])  # ["CNN", "SVR"]
     user_path = Column(String, nullable=False) # base_path
     static_path = Column(String, nullable=False) # content_path было раньше

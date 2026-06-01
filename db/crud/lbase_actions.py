@@ -5,7 +5,10 @@ from typing import Optional, List
 
 class BaseCRUD:
     async def create(self, db: AsyncSession, **kwargs) -> BaseEntity:
-        kwargs['trainedModels'] = []
+        # kwargs['trainedModels'] = []
+        kwargs.setdefault('trainedModels', [])
+        kwargs.setdefault('labelsX', [])
+        kwargs.setdefault('labelsY', [])
         base = BaseEntity(**kwargs)
         db.add(base)
         await db.commit()

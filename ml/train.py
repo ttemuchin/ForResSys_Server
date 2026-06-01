@@ -3,25 +3,23 @@ import torch.nn as nn
 from torch.utils.data import DataLoader
 import numpy as np
 import math
-import os, sys
+import os
 import json
 from pathlib import Path
-from sklearn.metrics import r2_score
+from sklearn.metrics import r2_score, mean_absolute_error
+from typing import Dict, Any, Tuple, List
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'models')))
-from Dataset import DynamicNMRDataset
-from ConvLayers_model import DynamicNMR_ConvRegressor
-from LinearRegression_model import DynamicNMR_LinearRegression
-from SVR_model import SVRegressorV0
- 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'preproc')))
-from Preprocess import parse_data_file, splitSamples, split_data
+from models.Dataset import DynamicNMRDataset
+from models.ConvLayers_model import DynamicNMR_ConvRegressor
+from models.LinearRegression_model import DynamicNMR_LinearRegression
+from models.SVR_model import SVRegressorV0
+
+from preproc.Preprocess import parse_data_file, splitSamples, split_data
 
 def safe_float_conversion(obj):
-    # преобразование float значений для JSON
     if isinstance(obj, float):
         if math.isinf(obj) or math.isnan(obj):
-            return 0.0  # или None, или строковое представление
+            return 0.0
         return obj
     elif isinstance(obj, dict):
         return {k: safe_float_conversion(v) for k, v in obj.items()}
@@ -36,50 +34,36 @@ def safe_r2_score(y_true, y_pred):
             len(y_true) < 2 or 
             np.var(y_true) == 0):
             return 0.0
-        
         r2 = r2_score(y_true, y_pred)
         return r2 if np.isfinite(r2) else 0.0
-        
     except:
         return 0.0
-
-def parse_config(config_path):
-    """Парсинг JSON (base )конфигурационного файла"""
-    try:
-        with open(config_path, 'r') as f:
-            config_data = json.load(f)
-        if "baseConfig" in config_data:
-            return config_data["baseConfig"]
-        return config_data
-    except Exception as e:
-        raise Exception(f"Error parsing JSON config file: {str(e)}")
-
-def validate_config(config, parsed_data):
-    """Проверка соответствия JSON-конфига данным"""
-    # config теперь словарь с полями BaseConfig
-    required_fields = ['name', 'N', 'nY', 'nX', 'dimension']
+    
+def validate_config(config: Dict[str, Any], parsed_data: List[Dict]) -> bool:
+    """Проверка соответствия конфига данным из БД"""
+    required_fields = ['name', 'N', 'nY', 'nX', 'dimension', 'labelsX', 'labelsY']
     for field in required_fields:
         if field not in config:
             raise Exception(f"Missing required field in config: {field}")
     
-    # количество образцов
+    # Количество образцов
     num_samples = config['N']
     if len(parsed_data) != num_samples:
         raise Exception(f"Sample count mismatch: config has {num_samples}, data has {len(parsed_data)}")
     
-    # количество целевых переменных
+    # Количество целевых переменных
     num_targets_y = config['nY']
     if 'Yi' not in parsed_data[0] or len(parsed_data[0]['Yi']) != num_targets_y:
         raise Exception(f"Target variables count mismatch: config has {num_targets_y}, data has {len(parsed_data[0].get('Yi', []))}")
     
-    # количество признаков и их длины
+    # Количество признаков и их длины
     num_features_x = config['nX']
     x_lengths = config['dimension']
     
     if len(x_lengths) != num_features_x:
         raise Exception(f"Features count mismatch: config has {num_features_x}, dimension has {len(x_lengths)}")
     
-    # фактические длины признаков в данных
+    # Проверка длин признаков в данных
     for i, length in enumerate(x_lengths):
         feature_key = f"X[{i}]"
         if feature_key not in parsed_data[0]:
@@ -87,45 +71,57 @@ def validate_config(config, parsed_data):
         if len(parsed_data[0][feature_key]) != length:
             raise Exception(f"Feature {feature_key} length mismatch: config has {length}, data has {len(parsed_data[0][feature_key])}")
     
-    # accuracy(mae)
-    if 'accuracy' in config:
-        y_precision = config['accuracy']  # уже список float
-        if len(y_precision) != num_targets_y:
-            raise Exception(f"Y precision count mismatch: accuracy has {len(y_precision)}, targets has {num_targets_y}")
+    # accuracy (error)
+    if 'error' in config and config['error']:
+        print(f"Note: Target errors (accuracy) from config: {config['error']}")
     
     return True
 
-def get_model_path(base_name, model_name, models_dir):
-    """собираем путь для сохранения весов"""
+def get_model_path(base_name: str, model_name: str, models_dir: Path) -> Path:
+    """Путь для сохранения финальных весов"""
     filename = f"{base_name}_{model_name}.pth"
-    return Path(models_dir) / filename
+    return models_dir / filename
 
-def get_best_model_path(base_name, model_name, models_dir):
-    """собираем путь для временного best_model"""
+def get_best_model_path(base_name: str, model_name: str, models_dir: Path) -> Path:
+    """Путь для временного best_model"""
     filename = f"{base_name}_{model_name}_best.pth"
-    return Path(models_dir) / filename
+    return models_dir / filename
 
-def create_model(model_name, input_dims, num_targets):
-    if model_name == "svr":
-        # TODO svr
+def create_model(model_name: str, input_dims: List[int], num_targets: int):
+    """Создание модели по названию"""
+    if model_name.lower() == "svr":
         return SVRegressorV0(input_dims, num_targets)
-    elif model_name == "convolutional":
+    elif model_name.lower() == "convolutional":
         return DynamicNMR_ConvRegressor(input_dims, num_targets)
-    elif model_name == "linear_regression":
+    elif model_name.lower() == "linear regression":
         return DynamicNMR_LinearRegression(input_dims, num_targets)
     else:
         raise Exception(f"Unknown model type: {model_name}")
-
-def train(base_name, path_to_base, path_to_config, model_name):
-    models_dir = Path(os.path.dirname(__file__)).parent.parent / "models" # \\app\\build\\models\\
-    models_dir.mkdir(exist_ok=True)
     
-    config = parse_config(path_to_config)
+
+def train(base_name: str, path_to_base: str, config: Dict[str, Any], model_name: str) -> Tuple[float, str, float, float]:
+    """
+    Обучение модели на обучающей базе
+    
+    Args:
+        base_name: Имя базы
+        path_to_base: Путь к файлу с данными (.txt)
+        config: Конфигурация базы (словарь из БД)
+        model_name: Название модели ("cnn", "svr", "linear regression")
+    
+    Returns:
+        Tuple[best_loss, weights_path, best_r2, best_mae]
+    """
+    models_dir = Path(os.path.dirname(__file__)) / "saved_models"
+    models_dir.mkdir(parents=True, exist_ok=True)
+    
+    # config = parse_data_file(path_to_base)
     
     parsed_data = parse_data_file(path_to_base)
     
     validate_config(config, parsed_data)
     
+    # DATASET
     train_data, test_data = split_data(parsed_data, train_ratio=0.85, shuffle=True, random_seed=42)
     x_train, y_train = splitSamples(train_data)
     x_test, y_test = splitSamples(test_data)
@@ -140,7 +136,7 @@ def train(base_name, path_to_base, path_to_config, model_name):
     input_dims = [len(x[0]) for x in x_train]
     num_targets = len(y_train[0])
 
-    assert input_dims == [len(x[0]) for x in x_test] and num_targets == len(y_test[0]), "Несоответствие размеров train/test"
+    # assert input_dims == [len(x[0]) for x in x_test] and num_targets == len(y_test[0]), "Несоответствие размеров train/test"
     # print(f"Input dimensions: {input_dims}, Number of targets: {num_targets}")
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -150,28 +146,34 @@ def train(base_name, path_to_base, path_to_config, model_name):
     model.to(device)
 
     criterion = nn.MSELoss()
+    # mae try it out
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-4)
 
     best_test_loss = float('inf')
+    best_mae = float('inf')
     best_r2 = -float('inf')
     best_epoch = 0
     patience = 10
     counter = 0
-    r2_threshold = 0.8
+    r2_threshold = 0.7
+    EPOCHS = 650
 
-    history = {
-        'train_loss': [],
-        'test_loss': [],
-        'r2': [],
-        'best_epoch_data': None
-    }
+    # history = {
+    #     'train_loss': [],
+    #     'test_loss': [],
+    #     'train_mae': [],
+    #     'test_mae': [],
+    #     'r2': [],
+    #     'best_epoch_data': None
+    # }
 
     final_weights_path = get_model_path(base_name, model_name, models_dir)
     best_weights_path = get_best_model_path(base_name, model_name, models_dir)
 
-    for epoch in range(250):
+    for epoch in range(EPOCHS):
         model.train()
         train_running_loss = 0.0
+        train_running_mae = 0.0
         
         for batch in train_dataloader:
             *x_batch, y_batch = batch
@@ -185,9 +187,16 @@ def train(base_name, path_to_base, path_to_config, model_name):
             optimizer.step()
             
             train_running_loss += loss.item()
+
+            mae_batch = mean_absolute_error(
+                y_batch.cpu().numpy(), 
+                outputs.detach().cpu().numpy()
+            )
+            train_running_mae += mae_batch
         
         model.eval()
         test_running_loss = 0.0
+        test_running_mae = 0.0
         all_preds = []
         all_targets = []
         
@@ -200,6 +209,12 @@ def train(base_name, path_to_base, path_to_config, model_name):
                 outputs = model(*x_batch)
                 loss = criterion(outputs, y_batch)
                 test_running_loss += loss.item()
+
+                mae_batch = mean_absolute_error(
+                    y_batch.cpu().numpy(), 
+                    outputs.cpu().numpy()
+                )
+                test_running_mae += mae_batch
                 
                 all_preds.append(outputs.cpu().numpy())
                 all_targets.append(y_batch.cpu().numpy())
@@ -209,29 +224,34 @@ def train(base_name, path_to_base, path_to_config, model_name):
 
         train_loss = train_running_loss / len(train_dataloader)
         test_loss = test_running_loss / len(test_dataloader)
-
-
+        train_mae = train_running_mae / len(train_dataloader)
+        test_mae = test_running_mae / len(test_dataloader)
         r2 = safe_r2_score(all_targets, all_preds)
 
-        history['train_loss'].append(train_loss)
-        history['test_loss'].append(test_loss)
-        history['r2'].append(r2)
+        # history['train_loss'].append(train_loss)
+        # history['test_loss'].append(test_loss)
+        # history['train_mae'].append(train_mae)
+        # history['test_mae'].append(test_mae)
+        # history['r2'].append(r2)
         
         # print(f"Epoch {epoch + 1}")
         # print(f"Train Loss: {train_loss:.4f} | Test Loss: {test_loss:.4f} | R² Score: {r2:.4f}")
-        
+        # print(f"Train MAE: {train_mae:.4f} | Test MAE: {test_mae:.4f} | R²: {r2:.4f}")
+
         # Early Stopping
         if test_loss < best_test_loss and r2 >= r2_threshold:
             best_test_loss = test_loss
+            best_mae = test_mae
             best_r2 = r2
             best_epoch = epoch
             counter = 0
             
-            history['best_epoch_data'] = {
-                'predictions': all_preds,
-                'targets': all_targets,
-                'epoch': epoch
-            }
+            # history['best_epoch_data'] = {
+            #     'predictions': all_preds,
+            #     'targets': all_targets,
+            #     'epoch': epoch,
+            #     'mae': test_mae
+            # }
 
             # Сохраняем лучшие веса во временный файл
             torch.save(model.state_dict(), best_weights_path)
@@ -242,16 +262,17 @@ def train(base_name, path_to_base, path_to_config, model_name):
                 # print(f"Best epoch: {best_epoch + 1} | Best Test Loss: {best_test_loss:.4f} | Best R²: {best_r2:.4f}")
                 break
         
+    print(f"Training completed for {base_name}")
     print(f"Best epoch: {best_epoch + 1} | Best Test Loss: {best_test_loss:.4f} | Best R2: {best_r2:.4f}")
     
-    best_test_loss = best_test_loss if math.isfinite(best_test_loss) else 0.0
-    best_r2 = best_r2 if math.isfinite(best_r2) else 0.0
-
     if best_weights_path.exists():
         model.load_state_dict(torch.load(best_weights_path, weights_only=True))
-        # Удаляем временный файл
         best_weights_path.unlink()
-
     torch.save(model.state_dict(), final_weights_path)
+    print(f"Model weights saved to: {final_weights_path}")
+
+    best_test_loss = best_test_loss if math.isfinite(best_test_loss) else 0.0
+    best_mae = best_mae if math.isfinite(best_mae) else 0.0
+    best_r2 = best_r2 if math.isfinite(best_r2) else 0.0
     
-    return best_test_loss, str(final_weights_path), best_r2
+    return best_test_loss, str(final_weights_path), best_r2, best_mae

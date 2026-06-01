@@ -9,6 +9,8 @@ class BaseCreate(BaseModel):
     error: List[float]  # [0.001, 0.005]
     nX: int
     dimension: List[int]  # [400, 60]
+    labelsX: List[str]
+    labelsY: List[str]
     user_path: str  # исходный путь от пользователя
     static_path: str  # путь в статике
 
@@ -19,6 +21,8 @@ class BaseUpdate(BaseModel):
     error: Optional[List[float]] = None
     nX: Optional[int] = None
     dimension: Optional[List[int]] = None
+    labelsX: Optional[List[str]] = None
+    labelsY: Optional[List[str]] = None
     trainedModels: Optional[List[str]] = None
 
 class BaseResponse(BaseModel):
@@ -29,6 +33,8 @@ class BaseResponse(BaseModel):
     error: List[float]
     nX: int
     dimension: List[int]
+    labelsX: List[str]
+    labelsY: List[str] 
     trainedModels: List[str]
     user_path: str
     static_path: str

@@ -37,6 +37,8 @@ async def create_user_with_data(db: AsyncSession) -> dict:
         error=[0.001, 0.005],
         nX=2,
         dimension=[400, 60],
+        labelsX=["FID", "T1"],
+        labelsY=["cryst", "eth"],
         user_path="C:/Users/user/Desktop/original_base.txt",
         static_path="/static/bases/base1_content.txt"
     )
@@ -49,6 +51,8 @@ async def create_user_with_data(db: AsyncSession) -> dict:
         error=[0.002, 0.003],
         nX=3,
         dimension=[500, 80, 120],
+        labelsX=["feature1", "feature2", "feature3"],
+        labelsY=["target1", "target2"],
         user_path="C:/Users/user/Desktop/original_base2.txt",
         static_path="/static/bases/base2_content.txt"
     )
