@@ -53,6 +53,7 @@ async def start_training(
     # Запускаем обучение в фоне
     background_tasks.add_task(
         TrainingService.run_training,
+        user_id=current_user.id,
         training_id=training.id,
         base_name=base.name,
         base_path=base.static_path,
@@ -113,3 +114,30 @@ async def get_training_status(
             response["result"] = metrics
     
     return response
+
+# ДЛЯ БЫСТРОГО ПОЛУЧЕНИЯ В СЕЛЕКТОРЫ
+@router.get("/bases-with-trainings", response_model=List[Dict[str, Any]])
+async def get_bases_with_trainings(
+    current_user: UserResponse = Depends(get_current_user_jwt),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Получение списка баз, по которым было хотя бы одно успешное обучение.
+    Используется для селектора в интерфейсе предсказаний.
+    """
+    bases = await TrainingService.get_bases_with_trainings(db, current_user.id)
+    return bases
+
+
+@router.get("/bases/{base_id}/available-models", response_model=List[str])
+async def get_available_models_for_base(
+    base_id: int,
+    current_user: UserResponse = Depends(get_current_user_jwt),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Получение списка моделей, обученных на указанной базе.
+    Используется для второго селектора в интерфейсе предсказаний.
+    """
+    models = await TrainingService.get_available_models_for_base(db, base_id, current_user.id)
+    return models

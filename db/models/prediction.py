@@ -7,14 +7,15 @@ class Prediction(Base):
     __tablename__ = "predictions"
     
     id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=True)
     input_file = Column(String, nullable=False)
     model = Column(String, nullable=False)
     results_path = Column(String, nullable=False)
     timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
     # Foreign Keys
-    base_id = Column(Integer, ForeignKey("bases.id"), nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    base_id = Column(Integer, ForeignKey("bases.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     # Relationships
     base = relationship("BaseEntity", back_populates="predictions")

@@ -18,8 +18,8 @@ class Training(Base):
     timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
     # Foreign Keys
-    base_id = Column(Integer, ForeignKey("bases.id"), nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    base_id = Column(Integer, ForeignKey("bases.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     # Relationships
     base = relationship("BaseEntity", back_populates="trainings")

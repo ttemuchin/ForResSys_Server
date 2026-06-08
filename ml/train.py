@@ -99,11 +99,12 @@ def create_model(model_name: str, input_dims: List[int], num_targets: int):
         raise Exception(f"Unknown model type: {model_name}")
     
 
-def train(base_name: str, path_to_base: str, config: Dict[str, Any], model_name: str) -> Tuple[float, str, float, float]:
+def train(user_id: int, base_name: str, path_to_base: str, config: Dict[str, Any], model_name: str) -> Tuple[float, str, float, float]:
     """
     Обучение модели на обучающей базе
     
     Args:
+        user_id: для сохранения весов в подпапки
         base_name: Имя базы
         path_to_base: Путь к файлу с данными (.txt)
         config: Конфигурация базы (словарь из БД)
@@ -112,7 +113,7 @@ def train(base_name: str, path_to_base: str, config: Dict[str, Any], model_name:
     Returns:
         Tuple[best_loss, weights_path, best_r2, best_mae]
     """
-    models_dir = Path(os.path.dirname(__file__)) / "saved_models"
+    models_dir = Path(os.path.dirname(__file__)) / "saved_models" / str(user_id)
     models_dir.mkdir(parents=True, exist_ok=True)
     
     # config = parse_data_file(path_to_base)

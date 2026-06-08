@@ -22,6 +22,20 @@ class PredictionCRUD:
         )
         return result.scalars().all()
     
+    async def update_name(
+        self, 
+        db: AsyncSession, 
+        prediction_id: int, 
+        name: str
+    ) -> Optional[Prediction]:
+        """Обновление имени предсказания"""
+        prediction = await self.get_by_id(db, prediction_id)
+        if prediction:
+            prediction.name = name
+            await db.commit()
+            await db.refresh(prediction)
+        return prediction
+    
     async def delete(self, db: AsyncSession, prediction_id: int) -> bool:
         prediction = await self.get_by_id(db, prediction_id)
         if prediction:

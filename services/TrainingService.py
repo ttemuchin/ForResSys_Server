@@ -4,6 +4,9 @@ from db.schemas.training import TrainingCreate, TrainingResponse, TrainingStatus
 from typing import Optional, List, Dict, Any
 import asyncio
 
+from sqlalchemy import select, distinct
+from db.models import BaseEntity, Training, TrainingStatus
+
 training_crud = TrainingCRUD()
 
 # Временное хранилище метрик обучения
@@ -57,6 +60,7 @@ class TrainingService:
     
     @staticmethod
     async def run_training(
+        user_id: int,
         training_id: int,
         base_name: str,
         base_path: str,
@@ -72,6 +76,7 @@ class TrainingService:
             
             # Запускаем обучение, синхронный вызов
             best_loss, weights_path, best_r2, best_mae = train(
+                user_id=user_id,
                 base_name=base_name,
                 path_to_base=base_path,
                 config=base_config,
@@ -102,3 +107,61 @@ class TrainingService:
     def get_training_metrics(training_id: int) -> Optional[Dict[str, Any]]:
         """Получение метрик обучения из временного хранилища"""
         return training_results.get(training_id)
+    
+
+    # ДЛЯ БЫСТРОГО ПОЛУЧЕНИЯ В СЕЛЕКТОРЫ
+    # НЕМНОГО МЕШАЕТСЯ С КРУД СЕКЦИЕЙ НО НЕСТРАШНО
+    @staticmethod
+    async def get_bases_with_trainings(
+        db: AsyncSession, 
+        user_id: int
+    ) -> List[Dict[str, Any]]:
+        """
+        Получение списка баз, по которым было хотя бы одно успешное обучение.
+        Возвращает список словарей с id и name базы.
+        """
+        result = await db.execute(
+            select(distinct(BaseEntity.id), BaseEntity.name)
+            .join(Training, Training.base_id == BaseEntity.id)
+            .where(
+                BaseEntity.user_id == user_id,
+                Training.status == TrainingStatus.COMPLETED
+            )
+            .order_by(BaseEntity.name)
+        )
+        
+        bases = result.all()
+        return [{"id": row[0], "name": row[1]} for row in bases]
+    
+    @staticmethod
+    async def get_available_models_for_base(
+        db: AsyncSession, 
+        base_id: int,
+        user_id: int
+    ) -> List[str]:
+        """
+        Получение списка моделей, которые были успешно обучены на указанной базе.
+        Возвращает уникальные названия моделей.
+        """
+        # Проверяем, принадлежит ли база пользователю
+        base = await db.execute(
+            select(BaseEntity).where(
+                BaseEntity.id == base_id,
+                BaseEntity.user_id == user_id
+            )
+        )
+        base = base.scalar_one_or_none()
+        if not base:
+            return []
+        
+        result = await db.execute(
+            select(distinct(Training.model))
+            .where(
+                Training.base_id == base_id,
+                Training.status == TrainingStatus.COMPLETED
+            )
+            .order_by(Training.model)
+        )
+        
+        models = result.scalars().all()
+        return list(models)

@@ -1,7 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
- 
+import math
+
 class DynamicNMR_LinearRegression(nn.Module):
     def __init__(self, input_dims: list, num_targets: int):
         """
@@ -16,29 +17,27 @@ class DynamicNMR_LinearRegression(nn.Module):
         # общая сумма размеров всех сигналов
         total_input_size = sum(input_dims)
         
-        self.linear_layers = nn.Sequential(
-            nn.Linear(total_input_size, 128),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(128, 64),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(64, num_targets)
-        )
+        # Единственный линейный слой — это и есть классическая линейная регрессия
+        # Веса размера [num_targets, total_input_size]
+        # Смещение (bias) размера [num_targets]
+        self.linear = nn.Linear(total_input_size, num_targets)
         
         self._initialize_weights()
 
     def _initialize_weights(self):
-        # Инициализация весов для предотвращения NaN/Inf
+        # Стандартная инициализация для линейной регрессии
         for m in self.modules():
             if isinstance(m, nn.Linear):
-                nn.init.xavier_uniform_(m.weight, gain=nn.init.calculate_gain('relu'))
+                # Инициализация весов по умолчанию из PyTorch (Kaiming Uniform)
+                nn.init.kaiming_uniform_(m.weight, a=math.sqrt(5))
                 if m.bias is not None:
-                    nn.init.constant_(m.bias, 0.01)
+                    fan_in, _ = nn.init._calculate_fan_in_and_fan_out(m.weight)
+                    bound = 1 / math.sqrt(fan_in) if fan_in > 0 else 0
+                    nn.init.uniform_(m.bias, -bound, bound)
 
     def forward(self, *x_signals):
         """
-        :param x_signals: M сигналов размером [B, L_i], где L_i - мб любым
+        :param x_signals: M сигналов размером [B, L_i], где L_i - длина i-го сигнала
         :return: Предсказания размером [B, num_targets]
         """
         if len(x_signals) != self.num_experiments:
@@ -55,28 +54,29 @@ class DynamicNMR_LinearRegression(nn.Module):
                 else:
                     pad_size = self.input_dims[i] - signal.shape[-1]
                     signal = F.pad(signal, (0, pad_size), mode='constant', value=0)
-            
-            flattened = signal.reshape(batch_size, -1)
-            signal_vectors.append(flattened)
+
+            signal_vectors.append(signal)
         
-        combined = torch.cat(signal_vectors, dim=1)  # [B, total_input_size]
-        
-        return self.linear_layers(combined)
+        combined = torch.cat(signal_vectors, dim=1)
+
+        return self.linear(combined) # [batch_size, num_targets]
 
     def get_feature_importance(self, *x_signals):
-        # важность признаков для интерпретации модели
-        with torch.no_grad():
-            first_layer = self.linear_layers[0]
-            weights = first_layer.weight.data  # [128, total_input_size]
-            
-            importance = torch.abs(weights).mean(dim=0)  # [total_input_size]
-            
-            importance_per_signal = []
-            start_idx = 0
-            for dim in self.input_dims:
-                end_idx = start_idx + dim
-                signal_importance = importance[start_idx:end_idx]
-                importance_per_signal.append(signal_importance)
-                start_idx = end_idx
-            
-            return importance_per_signal
+        """
+        Возвращает веса линейной модели для каждого входного отсчёта.
+        Для линейной регрессии важность признака прямо пропорциональна |веса|
+        """
+        # weights имеет размер [num_targets, total_input_size]
+        # Усредняем по целевым переменным, если их несколько
+        importance = torch.abs(self.linear.weight.data).mean(dim=0)  # [total_input_size]
+        
+        # Разбиваем важность по исходным сигналам
+        importance_per_signal = []
+        start_idx = 0
+        for dim in self.input_dims:
+            end_idx = start_idx + dim
+            signal_importance = importance[start_idx:end_idx]
+            importance_per_signal.append(signal_importance)
+            start_idx = end_idx
+        
+        return importance_per_signal
